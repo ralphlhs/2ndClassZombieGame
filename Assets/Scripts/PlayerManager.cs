@@ -1,11 +1,17 @@
-using System;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
+using static ParticleManager;
+//using UnityEngine.Animations.Rigging;
+
 
 public class PlayerManager : MonoBehaviour
 {
+    public static PlayerManager Instance { get; private set; }
+
     private float moveSpeed = 5.0f;//플레이어 이동 속도
-    public float mouseSensitivity = 100.0f; //마무스감도
+    public float mouseSensitivity = 150.0f; //마무스감도
     public Transform cameraTransform;//카메라의 Transform
     public CharacterController characterController;
     public Transform playerHead;
@@ -38,6 +44,7 @@ public class PlayerManager : MonoBehaviour
     public float jumpHeight = 2.0f;
     private Vector3 velocity;
     private bool isGround;
+    private Rigidbody rigidbody;
 
     private Animator animator;
     private float horizontal;
@@ -46,12 +53,17 @@ public class PlayerManager : MonoBehaviour
 
     private bool isFire = false;
     private bool isDying = false;
+    private bool isHavingGun = false;
+    private bool isAlive = true;
+    private bool isAim = false;
+    private bool isFreeze = true;
 
     public AudioClip audioClipFire;
     public AudioClip audioClipItemGet;
     private AudioSource audioSource;
     public AudioClip audioClipWeaponChange;
     public GameObject RifleM4Obj;
+    public GameObject oneMore;
 
     public float walkSpeed = 5.0f;
     public float runSpeed = 10.0f;
@@ -61,10 +73,6 @@ public class PlayerManager : MonoBehaviour
 
     public Transform aimTarget;
     private float weaponMaxDistance = 100.0f;
-    public GameObject cube;
-    private int cubeHP = 10;
-    public GameObject cube1;
-    private int cube1HP = 10;
     RaycastHit[] hits;
 
     public Text text;
@@ -75,10 +83,11 @@ public class PlayerManager : MonoBehaviour
     //public MultiAimConstraint multiAimConstraint;
 
     public Vector3 boxSize = new Vector3(1.0f, 1.0f, 1.0f);
-    public float castDistance = 5.0f;
+    public float castDistance = 1.0f;
     public LayerMask itemLayer;
     public Transform itemGetPos;
     public GameObject crosshairObj;
+    public GameObject scopeObj;
     public GameObject m4IconImage;
     GameObject zombie;
     //ZombieManager zombieManager;
@@ -93,14 +102,14 @@ public class PlayerManager : MonoBehaviour
     public AudioClip audioClipDamage;
     public AudioClip audioClipFlashOn;
 
-    public Text bulletText;
-    private int firebulletCount = 30;
+    public TextMeshProUGUI bulletText;
+    private int firebulletCount = 0;
     private int savebulletCount = 0;
     public GameObject flashLightObj;
     private bool isFlashLightOn = false;
 
     public int playerHP = 100;
-    public Text playerHPtext;
+    public TextMeshProUGUI playerHpText;
 
     public GameObject PauseObj;
     private bool isPause = false;
@@ -118,6 +127,24 @@ public class PlayerManager : MonoBehaviour
     public GameObject door;
     private bool isDoor = true;
 
+    public GameObject Sniper;
+    public GameObject Ak;
+    public GameObject Assault;
+    public GameObject Smg;
+    public GameObject Sniper_inHand;
+    public GameObject Ak_inHand;
+    public GameObject Assault_inHand;
+    public GameObject Smg_inHand;
+    public GameObject bulletBox;
+    private string havingGunName;
+    private int zoomShot = 1;
+
+    private void Awake()
+    {
+        if (Instance == null) { Instance = this; }
+        else { if (Instance != this) Destroy(gameObject); }
+    }
+
     void Start()
     {
         Cursor.lockState = CursorLockMode.Locked;
@@ -128,9 +155,8 @@ public class PlayerManager : MonoBehaviour
         mainCamera.fieldOfView = defaultFov;
         animator = GetComponent<Animator>();
         audioSource = GetComponent<AudioSource>();
+        rigidbody = GetComponent<Rigidbody>();
         RifleM4Obj.SetActive(false);
-        //crosshairObj.SetActive(false);
-        //m4IconImage.SetActive(false);
     }
 
     void Update()
@@ -140,10 +166,18 @@ public class PlayerManager : MonoBehaviour
         PlayerMovement();
         Run();
         AnimationSet();
-        //AimSet();
+        Jump();
+        AimSet();
+        WeaponFire();
 
+        Die();
+ 
+        playerHpText.text = $"PlayerHP : {playerHP}";
 
+        if (Input.GetKeyDown(KeyCode.F1)) { playerHP -= 10; }
     }
+
+
 
     private void MouseSet()
     {
@@ -187,49 +221,75 @@ public class PlayerManager : MonoBehaviour
 
     void Run()
     {
-        if (Input.GetKey(KeyCode.LeftShift))
-        {
-            isRunning = true;
-        }
-        else
-        {
-            isRunning = false;
-        }
-        moveSpeed = isRunning ? runSpeed : walkSpeed;
+        //if (isFreeze == true)
+        //{
+            if (Input.GetKey(KeyCode.LeftShift))
+            {
+                isRunning = true;
+            }
+            else
+            {
+                isRunning = false;
+            }
+            moveSpeed = isRunning ? runSpeed : walkSpeed;
+        //}
+    }
+
+    void Jump()
+    {
+        //if (isFreeze == true)
+        //{
+
+            if (Input.GetKeyDown(KeyCode.Space))
+            {
+                animator.SetLayerWeight(1, 0); //첫번째 애니메이터 레이어를 활성화 해라.
+                animator.SetTrigger("IsJump");
+                SfxSound("Jump", transform.position, 1.0f);
+                //rigidbody.AddForce(Vector3.up * 10.0f, ForceMode.Impulse);
+            }
+        //}
     }
 
     void PlayerMovement()
     {
-        if (isFirstPerson)
-        {
-            FirstPersonMovement();
-        }
-        else
-        {
-            ThirdPersonMovement();
-        }
+        //if (isFreeze == true)
+        //{
+
+            if (isFirstPerson)
+            {
+                FirstPersonMovement();
+            }
+            else
+            {
+                ThirdPersonMovement();
+            }
+        //}
     }
 
     void FirstPersonMovement()
     {
-        horizontal = Input.GetAxis("Horizontal");
-        vertical = Input.GetAxis("Vertical");
-        Vector3 moveDirection = cameraTransform.forward * vertical + cameraTransform.right * horizontal;
-        moveDirection.y = 0;
-        characterController.Move(moveDirection * moveSpeed * Time.deltaTime);
-        cameraTransform.position = playerHead.position;
-        cameraTransform.rotation = Quaternion.Euler(pitch, yaw, 0);
-        transform.rotation = Quaternion.Euler(0f, cameraTransform.eulerAngles.y, 0);
+        if(!isAlive)moveSpeed = 0.0f;
+            horizontal = Input.GetAxis("Horizontal");
+            vertical = Input.GetAxis("Vertical");
+            Vector3 moveDirection = cameraTransform.forward * vertical + cameraTransform.right * horizontal;
+            moveDirection.y = 0;
+            characterController.Move(moveDirection * moveSpeed * Time.deltaTime);
+            cameraTransform.position = playerHead.position;
+            cameraTransform.rotation = Quaternion.Euler(pitch, yaw, 0);
+            transform.rotation = Quaternion.Euler(0f, cameraTransform.eulerAngles.y, 0);
+        
     }
 
     void ThirdPersonMovement()
     {
+        if (!isAlive) moveSpeed = 0.0f;
         horizontal = Input.GetAxis("Horizontal");
-        vertical = Input.GetAxis("Vertical");
-        Vector3 move = transform.right * horizontal + transform.forward * vertical;
-        characterController.Move(move * moveSpeed * Time.deltaTime);
+            vertical = Input.GetAxis("Vertical");
+            Vector3 move = transform.right * horizontal + transform.forward * vertical;
+            characterController.Move(move * moveSpeed * Time.deltaTime);
 
-        UpdateCameraPosition();
+            UpdateCameraPosition();
+        
     }
 
     private void UpdateCameraPosition()
@@ -247,7 +307,7 @@ public class PlayerManager : MonoBehaviour
             cameraTransform.LookAt(transform.position + new Vector3(0, thirdPersonOffset.y, 0));
 
         }
-        else
+        else if (isAlive)
         {
             //플레이어가 직접 회전하는 모드
             transform.rotation = Quaternion.Euler(0f, yaw, 0);
@@ -275,6 +335,197 @@ public class PlayerManager : MonoBehaviour
         targetFov = fov;
     }
 
+    public void Dead()
+    {
+        isAlive = false;
+        moveSpeed = 0.0f;
+        Invoke("OneMore", 3.0f);
+    }
+    void OneMore() {
+        Cursor.lockState = CursorLockMode.None;
+        oneMore.SetActive(true);
+    }
+
+    public void Survive()
+    {
+        SfxSound("Jump", transform.position, 1.0f);
+        isAlive = true;
+            animator.SetLayerWeight(1, 0); //첫번째 애니메이터 레이어를 활성화 해라.
+            animator.SetTrigger("IsSurvive");
+            oneMore.SetActive(false);
+        Cursor.lockState = CursorLockMode.Locked;
+    }
+
+
+
+    //==================================================================================
+        void AimSet()
+    {
+        if (Input.GetMouseButtonDown(1) && isHavingGun) // && isUseWeapon)
+        {
+            zoomShot = 10;
+            isAim = true;
+            //multiAimConstraint.data.offset = new Vector3(-30, 0, 0);
+            scopeObj.SetActive(true);
+            //animator.SetBool("isFiring", isAim);
+            animator.SetLayerWeight(1, 1); //첫번째 애니메이터 이어를 활성화 해라.
+            if (zoomCoroutine != null)
+            {
+                StopCoroutine(zoomCoroutine);
+            }
+            if (isFirstPerson)
+            {
+                SetTargetFOV(zoomFov);
+                zoomCoroutine = StartCoroutine(ZoomFieldOfView(targetFov));
+            }
+            else
+            {
+                SetTargetDistance(zoomDistance);
+                zoomCoroutine = StartCoroutine(ZoomCamera(targetDistance));
+            }
+            //StartCoroutine(zombieManager.TakeDamage(1.0f));
+        }
+
+        if (Input.GetMouseButtonUp(1) && isHavingGun) // && isUseWeapon)
+        {
+            zoomShot = 1;
+            isAim = false;
+            //crosshairObj.SetActive(true);
+            scopeObj.SetActive(false);
+            //multiAimConstraint.data.offset = new Vector3(0, 0, 0);
+            animator.SetBool("IsHit", isAim); // 강사코드와 다른 부분 
+            //animator.SetBool("isFiring", isAim);
+            animator.SetLayerWeight(1, 0); //첫번째 레이어를 활성화 해라
+
+
+            if (zoomCoroutine != null)
+            {
+                StopCoroutine(zoomCoroutine);
+            }
+            if (isFirstPerson)
+            {
+                SetTargetFOV(defaultFov);
+                zoomCoroutine = StartCoroutine(ZoomFieldOfView(targetFov));
+            }
+            else
+            {
+                SetTargetDistance(thirdPersonDistance);
+                zoomCoroutine = StartCoroutine(ZoomCamera(targetDistance));
+            }
+        }
+    }
+
+    void WeaponFire()
+    {
+
+        if (Input.GetMouseButtonDown(0))
+        {
+            if (isHavingGun)//(isAim)
+            {
+                animator.SetLayerWeight(1, 1);
+                animator.SetTrigger("IsFire");
+                if (savebulletCount > 0)
+                {
+                    firebulletCount += 1;
+                    savebulletCount -= 1;
+                    bulletText.text = $"{firebulletCount}발 발사 / 남은 총알수 : {savebulletCount}";
+                    bulletText.gameObject.SetActive(true);
+                }
+                else
+                {
+                    //총알이 없는 소리 재생
+                    //return
+                }
+
+                //Weapon Type MaxDistance Set
+                weaponMaxDistance = 1000.0f;
+
+                isFire = true;
+                
+
+                rifleFireDelay = 3.0f;
+                StartCoroutine(FireWithDelay(rifleFireDelay));
+                SfxSound("Fire", transform.position, 1.0f);
+
+                //ApplyRecoil();
+                //StartCameraShake();
+
+                Ray ray = new Ray(mainCamera.transform.position, mainCamera.transform.forward);
+                RaycastHit[] hits = Physics.RaycastAll(ray, weaponMaxDistance, TargetLayerMask);
+
+                if (hits.Length > 0)
+                {
+                    for (int i = 0; i < hits.Length; i++)
+                    {
+                        Debug.Log("충돌 :  " + hits[i].collider.name);
+                        Debug.DrawLine(ray.origin, hits[i].point, Color.red, 2.0f);
+
+
+                        ParticleManager.Instance.ParticlePlay(ParticleType.DamageExplosion, hits[i].point, Vector3.one);
+                        ParticleSystem particle = Instantiate(DamageParticleSystem, hits[i].point, Quaternion.identity);
+                        DamageParticleSystem.Play();
+                        SfxSound("Damage", transform.position, 1.0f);
+                        if (hits[i].collider.tag == "Enemy")
+                        {
+                            int hitHP = zoomShot;
+                            hits[i].collider.GetComponent<ZombieManager>().TakeDamage(hitHP);
+                        }
+                    }
+                }
+                else
+                {
+                    Debug.DrawLine(ray.origin, ray.origin + ray.direction * weaponMaxDistance, Color.red);
+                }
+            }
+        }
+        if (Input.GetMouseButtonUp(0))
+        {
+            isFire = false;
+        }
+    }
+
+    void WeaponChange()
+    {
+        if (Input.GetKeyDown(KeyCode.Alpha1) && isGetM4Item)
+        {
+            SfxSound("Reload", transform.position, 1.0f);
+            animator.SetTrigger("IsWeaponChange");
+            RifleM4Obj.SetActive(true);
+            isUseWeapon = true;
+        }
+    }
+
+    //-------------------------
+
+    IEnumerator ZoomCamera(float targetDistance)
+    {
+        while (Mathf.Abs(currentDistance - targetDistance) > 0.01f)
+        {
+            currentDistance = Mathf.Lerp(currentDistance, targetDistance, Time.deltaTime * zoomSpeed);
+            yield return null;
+        }
+
+        currentDistance = targetDistance; //목표거리에 도달한 후 값을 고정
+    }
+
+    IEnumerator ZoomFieldOfView(float targetFov)
+    {
+        while (Mathf.Abs(mainCamera.fieldOfView - targetFov) > 0.01f)
+        {
+            mainCamera.fieldOfView = Mathf.Lerp(mainCamera.fieldOfView, targetFov, Time.deltaTime * zoomSpeed);
+            yield return null;
+        }
+
+        mainCamera.fieldOfView = targetFov;
+    }
+
+    IEnumerator FireWithDelay(float fireDelay)
+    {
+        yield return new WaitForSeconds(fireDelay);
+        isFire = false;
+    }
+
+
     //========================================================================================
 
     public void ItemBoxCast()
@@ -287,29 +538,144 @@ public class PlayerManager : MonoBehaviour
         DebugBox(origin, direction);
         foreach (RaycastHit hit in hits)
         {
-            if (hit.collider.name == "ItemM4")
+            if (hit.collider.tag == "Sniper")
             {
-                hit.collider.gameObject.SetActive(false);
-                SfxSound("FootStep", transform.position, 1.0f);
-                Debug.Log("Item : " + hit.collider.name);
-                m4IconImage.SetActive(true);
-                isGetM4Item = true;
-                bulletText.gameObject.SetActive(true);
-            }
-            if (hit.collider.tag == "Item")
-            {
-                hit.collider.gameObject.SetActive(false);
-                SfxSound("FootStep", transform.position, 1.0f);
+                Destroy(hit.collider.gameObject);
+                if (havingGunName == "Smg")
+                { Instantiate(Smg, transform.position, Quaternion.identity); }
+                else if (havingGunName == "Ak")
+                { Instantiate(Ak, transform.position, Quaternion.identity); }
+                else if (havingGunName == "Assault")
+                { Instantiate(Assault, transform.position, Quaternion.identity); }
 
-                savebulletCount += 30;
-                if (savebulletCount > 120)
-                {
-                    savebulletCount = 120;
+                SfxSound("Mechanical", transform.position, 1.0f);
+                Debug.Log("Item : " + hit.collider.tag);
+                Sniper_inHand.SetActive(true);
+                Smg_inHand.SetActive(false);
+                Ak_inHand.SetActive(false);
+                Assault_inHand.SetActive(false);
+                isGetM4Item = true;
+                isHavingGun = true;
+                //bulletText.gameObject.SetActive(true);
+                havingGunName = hit.collider.tag;
+            }
+
+            if (hit.collider.tag == "Smg")
+            {
+                Destroy(hit.collider.gameObject);
+                if (havingGunName == "Ak")
+                { Instantiate(Ak, transform.position, Quaternion.identity); }
+                else if (havingGunName == "Assault")
+                { Instantiate(Assault, transform.position, Quaternion.identity); }
+                else if (havingGunName == "Sniper")
+                { Instantiate(Sniper, transform.position, Quaternion.identity); }
+                hit.collider.gameObject.SetActive(false);
+                SfxSound("Mechanical", transform.position, 1.0f);
+                Debug.Log("Item : " + hit.collider.tag);
+
+ 
+                Sniper_inHand.SetActive(false);
+                Smg_inHand.SetActive(true);
+                Ak_inHand.SetActive(false);
+                Assault_inHand.SetActive(false);
+
+                isGetM4Item = true;
+                //bulletText.gameObject.SetActive(true);
+                isHavingGun = true;
+                havingGunName = hit.collider.tag;
+            }
+
+            if (hit.collider.tag == "Ak")
+            {
+                Destroy(hit.collider.gameObject);
+                if (havingGunName == "Smg")
+                { Instantiate(Smg, transform.position, Quaternion.identity); }
+                else if (havingGunName == "Assault")
+                { Instantiate(Assault, transform.position, Quaternion.identity); }
+                else if (havingGunName == "Sniper")
+                { Instantiate(Sniper, transform.position, Quaternion.identity); }
+
+
+                SfxSound("Mechanical", transform.position, 1.0f);
+                Debug.Log("Item : " + hit.collider.name);
+                Sniper_inHand.SetActive(false);
+                Smg_inHand.SetActive(false);
+                Ak_inHand.SetActive(true);
+                Assault_inHand.SetActive(false);
+                isGetM4Item = true;
+                //bulletText.gameObject.SetActive(true);
+                isHavingGun = true;
+                havingGunName = hit.collider.tag;
+
+            }
+
+            if (hit.collider.tag == "Assault")
+            {
+                Destroy(hit.collider.gameObject);
+                if (havingGunName == "Smg")
+                { Instantiate(Smg, transform.position, Quaternion.identity); }
+                else if (havingGunName == "Ak")
+                { Instantiate(Ak, transform.position, Quaternion.identity); }
+                else if (havingGunName == "Sniper")
+                { Instantiate(Sniper, transform.position, Quaternion.identity); }
+
+     
+                SfxSound("Mechanical", transform.position, 1.0f);
+                Debug.Log("Item : " + hit.collider.name);
+                Sniper_inHand.SetActive(false);
+                Smg_inHand.SetActive(false);
+                Ak_inHand.SetActive(false);
+                Assault_inHand.SetActive(true);
+                isGetM4Item = true;
+                //bulletText.gameObject.SetActive(true);
+                isHavingGun = true;
+                havingGunName = hit.collider.tag;
+
+            }
+            if(hit.collider.name == null)
+            {
+                isHavingGun = false;
+                crosshairObj.SetActive(false);
+            }
+
+            if (hit.collider.tag == "Bullet")
+            {
+                SfxSound("Reload", transform.position, 1.0f);
+                if (savebulletCount < 120) {
+                    Destroy(hit.collider.gameObject);
+                    savebulletCount += 30;
+                    if (savebulletCount > 120)
+                    {
+                        savebulletCount = 120;
+                    }
+                    bulletBox.SetActive(true);
+                    bulletText.text = $"{firebulletCount}발 발사 / 남은 총알수 : {savebulletCount}";
                 }
-                bulletText.text = $"{firebulletCount}/{savebulletCount}";
-                bulletText.gameObject.SetActive(true);
             }
         }
+    }
+
+    private void Die()
+    {
+        if (Input.GetKeyDown(KeyCode.P) || playerHP <= 0 )
+        {
+            if (isDying)
+            {
+                playerHP = 0;
+                isDying = !isDying;
+                animator.SetLayerWeight(1, 0); //첫번째 애니메이터 레이어를 활성화 해라.
+                animator.SetTrigger("IsDie");
+                SfxSound("Dead", transform.position, 1.0f);
+                //bulletBox.SetActive(true);
+                //bulletText.text = "0 발";
+            }
+            else isDying = !isDying;
+        }
+    }
+
+    public void FootStep()
+    {
+        SfxSound("Step", transform.position, 1.0f);
     }
 
 
@@ -345,6 +711,42 @@ public class PlayerManager : MonoBehaviour
     private void SfxSound(string soundname, Vector3 pos, float spatial)
     {
         SoundController.Instance.PlaySfx(soundname, pos, spatial);
+    }
+
+    public void  CrossHairActive()
+    {
+        crosshairObj.SetActive(true);
+    }
+
+    public void CrossHairFalse()
+    {
+        crosshairObj.SetActive(false);
+    }
+
+    private void OnCollisionEnter(Collision collision)
+    {
+        if(collision.gameObject.tag == "Enemy")
+        {
+            playerHP -= 10;
+        }
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other.gameObject.tag == "Enemy")
+        {
+            playerHP -= 10;
+        }
+    }
+
+    public void IsFreeze()
+    {
+        isFreeze = true;
+    }
+
+    public void IsUnFreeze()
+    {
+        isFreeze = false;
     }
 }
 
