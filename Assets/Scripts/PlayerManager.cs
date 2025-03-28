@@ -741,12 +741,14 @@ public class PlayerManager : MonoBehaviour
 
     public void IsFreeze()
     {
-        isFreeze = true;
+        moveSpeed = 0.0f;
+        isAlive = false;
     }
 
     public void IsUnFreeze()
     {
-        isFreeze = false;
+        moveSpeed = 5.0f;
+        isAlive = true;
     }
 }
 
